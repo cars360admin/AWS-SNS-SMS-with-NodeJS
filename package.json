@@ -11,9 +11,12 @@
   "license": "MIT",
   "dependencies": {
     "aws-sdk": "^2.480.0",
+    "cors": "^2.8.5",
     "dotenv": "^8.0.0",
     "express": "^4.17.1",
     "redis": "^4.3.1",
-    "redis-clustr": "^1.4.3"
+    "redis-clustr": "^1.4.3",
+    "request": "^2.88.2",
+    "twilio": "^3.82.0"
   }
 }

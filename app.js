@@ -3,12 +3,14 @@ const app = express();
 require('dotenv').config();
 var AWS = require('aws-sdk');
 var RedisClient = require('redis');
+const cors = require ('cors');
 const { response } = require('express');
+var request = require("request");
 
 
 
 //REDIS CONFIGURATIONS--------------------------------
-const client = RedisClient.createClient({url: 'redis://localhost:6379'});
+const client = RedisClient.createClient({url: process.env.AWS_REDIS_URL});
 client.connect();
 
 client.on("connect", function () {
@@ -24,12 +26,42 @@ const otpRequestHandler = async (number) => {
         otp = generateOTP();
         console.log("Generating OTP for", number, ":", otp);
         saveOTP(number, otp);
-        dispatchOTP(number,otp);
+        smsDispatcher(number,otp);
         console.log("OTP for ", number, " saved as: ", otp);
         return(true);
     } else {
         return(false);
     }
+}
+
+const validateOTP = async (number, value) => {
+    let otp = await client.GET (number)
+    console.log("Matching ", value, " with ", otp, " for ", number);
+    if(otp==value){
+        return true;
+    } else{
+        return false;
+    }
+}
+
+const smsDispatcher = async (number, otp) => {
+    console.log('Auth key SMS dispatch request:', number, 'as', otp);
+    var options = { method: 'GET',
+    url: 'https://api.authkey.io/request',
+    qs: 
+    { authkey: '1197e95d848e416d',
+    mobile: number,
+    company: 'CARS360 account. Also',
+    otp: otp,
+    country_code: '+91',
+    sid: 5827 },
+    };
+
+    request(options, function (error, response, body) {
+    if (error) throw new Error(error);
+
+    console.log(body);
+    });
 }
 
 const checkTTL = async (number) => {
@@ -52,56 +84,44 @@ const saveOTP = async (number, otp) => {
     console.log("Saving OTP for ", number, ": ", otp)
 }
 
-const dispatchOTP = (number, otp) => {
+// Add headers before the routes are defined
+app.use(function (req, res, next) {
 
-    var params = {
-        Message: "Your OTP for registering with Cars360 is: " + otp,
-        PhoneNumber: '+' + number,
-        MessageAttributes: {
-            'AWS.SNS.SMS.SenderID': {
-                'DataType': 'String',
-                'StringValue': 'CARS360'
-            }
-        }
-    };
+    // Website you wish to allow to connect
+    res.setHeader('Access-Control-Allow-Origin', process.env.PROD_URL);
 
-    console.log("Dispatching SMS: \n", params);
+    // Request methods you wish to allow
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
 
-    var publishTextPromise = new AWS.SNS({ apiVersion: '2010-03-31' }).publish(params).promise();
+    // Request headers you wish to allow
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type');
 
-    publishTextPromise.then(
-        function (data) {
-            console.log("SMS Dispatch Response: ", data)
-            return true
-        }).catch(
-            function (err) {
-                console.log(JSON.stringify({ Error: err }));
-                return false;
-        });
-}
+    // Set to true if you need the website to include cookies in the requests sent
+    // to the API (e.g. in case you use sessions)
+    res.setHeader('Access-Control-Allow-Credentials', true);
 
-const validateOTP = async (number, value) => {
-    let otp = await client.GET (number)
-    console.log("Matching ", value, " with ", otp, " for ", number);
-    if(otp==value){
-        return true;
-    } else{
-        return false;
-    }
-}
+    // Pass to next layer of middleware
+    next();
+});
 
 app.get('/otp', function (req, res) {
 
     console.log("\n\n Dispatch OTP request from: ", req.query.number,"\n")
-    otpRequestHandler(req.query.number).then( (response) => {
+    otpRequestHandler(req.query.number.slice(3),'12345').then( (response) => {
         console.log("Request response: ",response);
         if(response==false){
             console.log('OTP TTL not expired');
-            res.end('wait');
+            let responseData = {
+                status: 'wait'
+            }
+            res.send(responseData); 
         }
         else {
             console.log('OTP Generated & Send');
-            res.end('true'); 
+            let responseData = {
+                status: 'success'
+            }
+            res.send(responseData); 
         }
     })
   })
@@ -109,18 +129,27 @@ app.get('/otp', function (req, res) {
 app.get('/validate', (req, res) => {
 
     console.log("\n\nValidate OTP request from: ", req.query.number,"\n")
-    validateOTP(req.query.number, req.query.value).then( (response) => {
+    validateOTP(req.query.number.slice(3), req.query.value).then( (response) => {
         console.log("Request response: ",response);
+        console.log(response);
         if(response==false){
             console.log('OTP Match Failed!');
-            res.end('false');
+            let responseData = {
+                status: 'failed'
+            }
+            res.send(responseData);
         }
         else {
             console.log('OTP Match Successful!');
-            res.end('true'); 
+            let responseData = {
+                status: 'success'
+            }
+            res.send(responseData); 
         }
     })
 
 });
+
+app.use(cors({origin: 'http://localhost:3000'}))
 
 app.listen(6738, () => console.log('SMS Service Listening on PORT 6738'))
