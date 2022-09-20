@@ -150,6 +150,6 @@ app.get('/validate', (req, res) => {
 
 });
 
-app.use(cors({origin: 'http://localhost:3000'}))
+app.use(cors({origin: process.env.PROD_URL}))
 
 app.listen(6738, () => console.log('SMS Service Listening on PORT 6738'))
